@@ -60,7 +60,7 @@ TLE.exporter = {
     });
     TLE.text_pop("wget download command", str);
   },
-  "YAAW": function(todown) {
+  "YAAW": function(downloaddir,todown) {
     if (TLE.getConfig("TLE_aria2_jsonrpc")) {
       show_tip("添加中...到YAAW界面查看是否添加成功");
       var aria2 = new ARIA2(TLE.getConfig("TLE_aria2_jsonrpc"));
@@ -70,10 +70,11 @@ TLE.exporter = {
           var filepath = TLE.safe_title(file.title);
           if (task.tasktype == 0 && task.filelist.length > 1)
             filepath = TLE.safe_title(task.taskname) + "/" + TLE.safe_title(file.title.replace(/\\+\*?/g,"/"));
-          aria2.addUri(file.downurl, {out: filepath, header: 'Cookie: gdriveid='+todown.gdriveid});
+          aria2.addUri(file.downurl, {dir: downloaddir, out: filepath, header: 'Cookie: gdriveid='+todown.gdriveid});
         });
       });
       hide_tip();
+      window.open(TLE.getConfig("TLE_aria2_jsonrpc_webui"));
     } else {
       show_tip("尚未设置Aria2 JSONRPC地址");
       hide_tip();
@@ -265,6 +266,59 @@ TLE.exporter = {
     };
   };
 
+  TLE.batch_down_yaaw = function(_this, _downloaddir, _do) {
+    if(!_downloaddir) {
+      show_tip("下载路径不能为空 ！！！");
+      hide_tip();
+    }
+    var ck = document.getElementsByName("ck");
+    var bt_task_list = [];
+    var normal_task_list = [];
+    $.each(ck, function(n, e) {
+      if (e.checked == false) return;
+
+      var taskid = e.value;
+      var d_status = $("#d_status"+taskid).val();
+      var d_tasktype = $("#d_tasktype"+taskid).val();
+      var d_flag = $("#dflag"+taskid).val();
+      if (d_flag != 4 && d_status == 2) {
+        if (d_tasktype == 0) {
+          bt_task_list.push(taskid);
+        } else {
+          normal_task_list.push(taskid);
+        };
+      };
+    });
+
+    if (bt_task_list.length) {
+      show_tip("载入中...");
+      $.getJSON(INTERFACE_URL+"/fill_bt_list?tid="+bt_task_list.join(",")+"&g_net="+G_section+"&uid="+G_USERID+"&callback=?", function(data) {
+        hide_tip();
+        var todown = {};
+        todown.gdriveid = $("#cok").val() || getCookie("gdriveid");
+        todown.tasklist = {};
+        $.each(data['Result'], function(n, e) {
+          var info = get_taskinfo($("#tr_c"+n));
+          todown.tasklist[n] = build_bt_taskinfo(info, e);
+        });
+        $.each(normal_task_list, function(n, e) {
+          var info = get_taskinfo($("#tr_c"+e));
+          todown.tasklist[e] = build_normal_taskinfo(info);
+        });
+        _do(_downloaddir,todown);
+      });
+    } else {
+      var todown = {};
+      todown.gdriveid = $("#cok").val() || getCookie("gdriveid");
+      todown.tasklist = {};
+      $.each(normal_task_list, function(n, e) {
+        var info = get_taskinfo($("#tr_c"+e));
+        todown.tasklist[e] = build_normal_taskinfo(info);
+      });
+      _do(_downloaddir,todown);
+    };
+  };
+
   TLE.bt_down = function(_this, _do) {
     var ck = document.getElementsByName("bt_list_ck");
     var files = [];
@@ -346,6 +400,32 @@ TLE.exporter = {
       onHide: function() { $(document.body).click(); },
     });
   };
+  TLE.yaaw_pop = function() {
+    var ck = document.getElementsByName("ck");
+    var fileList = '<h3 style="color: #333333;font-size: 14px;height: 20px;">任务列表</h3><ul style="padding-top: 10px;padding-left: 15px;">';
+    $.each(ck, function(n, e) {
+      if (e.checked == false) return;
+
+      var taskid = e.value;
+      var taskname = $("#taskname" + taskid).val();
+      fileList += '<li>#&nbsp;&nbsp;' + taskname + '</li><div style="margin: 5px 0;background: rgba(0, 0, 0, 0) url(\'http://cloud.vip.xunlei.com/190/img/lx/bg_dot.png?206\') repeat-x scroll 0 0;height: 5px;overflow: hidden;"></div>';
+    });
+    fileList += '</ul>';
+    // alert(fileList);
+    var content = '<div >'+ fileList
+        +'<div style="width: 100%; height: 100%;"><h3 style="color: #333333;font-size: 14px;height: 20px;">保存路径</h3>'
+        +'<ul style="padding-top: 10px;padding-left: 15px;">'
+        +'<li><input type="text" id="TLE_aria2_jsonrpc_dir" style="width: 350px"  value="/mnt/My_Passport/资源库/电影"/></li>'
+        +'</ul>'
+        +'<div style="padding: 30px 0 0 30%;margin-left: 40px; margin-top: -20px;margin-bottom: 35px;">'
+        +'<a href="#"  class="TLE_down_btn"   onclick="TLE.batch_down_yaaw(this, $(\'#TLE_aria2_jsonrpc_dir\').val(),TLE.exporter[\'YAAW\'])"><span><em class="TLE_icdwlocal">开始下载</em></span></a>'
+        +'</div>'
+        +'</div>'
+        +'</div>';
+    $("#TLE_text_pop").tpl("TLE_text_tpl", {'title': '添加任务 (YAAW)', 'content': content}).show().pop({
+      onHide: function() { $(document.body).click(); },
+    });
+  };
   TLE.window_pop = function(title, content) {
     $("#TLE_text_pop").tpl("TLE_text_tpl", {'title': title, 'content': content}).show().pop({
       onHide: function() { $(document.body).click(); },
@@ -418,6 +498,9 @@ TLE.exporter = {
     };
     TLE.setConfig("TLE_exporter", exporters.join("|"));
   };
+  if (TLE.getConfig("TLE_aria2_jsonrpc_webui") == "") {
+    TLE.setConfig("TLE_aria2_jsonrpc_webui", "http://aria2.me/yaaw");
+  }
 
   function init() {
     //css
@@ -469,6 +552,8 @@ TLE.exporter = {
               })()+'</li>'
               +'<li><b>Aria2 JSON-RPC Path</b></li>'
               +'<li>Path: <input type="text" id="TLE_aria2_jsonrpc" style="width: 350px" value="'+TLE.getConfig("TLE_aria2_jsonrpc")+'"/></li>'
+              +'<li><b>Aria2 JSON-RPC webUI</b></li>'
+              +'<li>URL: <input type="text" id="TLE_aria2_jsonrpc_webui" style="width: 350px" value="'+TLE.getConfig("TLE_aria2_jsonrpc_webui")+'"/></li>'
             +'</ul>'
           +'$1'));
     $(".n_vip").after('<div class="zh_info"><em onclick="setting.show()" class="sys_set"></em></div>');
@@ -481,9 +566,11 @@ TLE.exporter = {
       });
       var config_str = (enabled_exporter.length == 0) ? "_" : enabled_exporter.join("|");
       var jsonrpc_path = $("#TLE_aria2_jsonrpc").val();
-      if (TLE.getConfig("TLE_exporter") != config_str || TLE.getConfig("TLE_aria2_jsonrpc") != jsonrpc_path) {
+      var jsonrpc_webui = $("#TLE_aria2_jsonrpc_webui").val();
+      if (TLE.getConfig("TLE_exporter") != config_str || TLE.getConfig("TLE_aria2_jsonrpc") != jsonrpc_path || TLE.getConfig("TLE_aria2_jsonrpc_webui") != jsonrpc_webui) {
         TLE.setConfig("TLE_exporter", config_str);
         TLE.setConfig("TLE_aria2_jsonrpc", jsonrpc_path);
+        TLE.setConfig("TLE_aria2_jsonrpc_webui", jsonrpc_webui);
         TS2.show('设置已生效',1);
         setTimeout(function(){
           setting.hide();
@@ -497,7 +584,12 @@ TLE.exporter = {
       var str = '';
       $.each(TLE.exporter, function(n, f) {
         if (enabled_exporter.indexOf(n) == -1) return;
-        str+=('<a href="#" title="'+n+'" onmouseover="this.className=\'sel_on\'" onmouseout="this.className=\'\'" onclick="'+type+'(this, TLE.exporter[\''+n+'\'])">'+n+'</a>');
+        if(n=='YAAW'){
+          str+=('<a href="#" title="'+n+'" onmouseover="this.className=\'sel_on\'" onmouseout="this.className=\'\'" onclick="TLE.yaaw_pop()">'+n+'</a>');
+        }else{
+          str+=('<a href="#" title="'+n+'" onmouseover="this.className=\'sel_on\'" onmouseout="this.className=\'\'" onclick="'+type+'(this, TLE.exporter[\''+n+'\'])">'+n+'</a>');
+        }
+
       });
       return str;
     }
@@ -677,7 +769,7 @@ TLE.exporter = {
           var filepath = TLE.safe_title(file.title);
           if (task.tasktype === 0 && task.filelist.length > 1)
             filepath = TLE.safe_title(task.taskname) + "/" + TLE.safe_title(file.title.replace(/\\+\*?/g,"/"));
-          aria2.addUri(file.downurl, {out: filepath, header: 'Cookie: gdriveid='+todown.gdriveid});
+          aria2.addUri(file.downurl, {dir: '/mnt/My_Passport/资源库/游戏', out: filepath, header: 'Cookie: gdriveid='+todown.gdriveid});
         });
       });
       TLE.hide_tip();
